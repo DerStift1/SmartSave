@@ -183,7 +183,7 @@ public sealed class DownloadOrganizerService : IDisposable
 
     private static Task ShowErrorAsync(Exception ex)
     {
-        return ShowMessageAsync(ex.Message, "SmartSave");
+        return ShowMessageAsync(ex.ToString(), "SmartSave");
     }
 
     private static Task ShowInfoAsync(string message)
@@ -193,7 +193,12 @@ public sealed class DownloadOrganizerService : IDisposable
 
     private static Task ShowMessageAsync(string message, string caption)
     {
-        var dispatcher = Application.Current.Dispatcher;
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            return Task.CompletedTask;
+        }
+
         if (dispatcher.CheckAccess())
         {
             MessageBox.Show(message, caption);
