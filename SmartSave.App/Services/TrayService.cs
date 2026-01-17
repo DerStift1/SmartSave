@@ -10,6 +10,8 @@ namespace SmartSave.App.Services
     {
         private TaskbarIcon? _trayIcon;
 
+        public event EventHandler? PendingRequested;
+
         public void Start()
         {
             _trayIcon = new TaskbarIcon
@@ -20,20 +22,16 @@ namespace SmartSave.App.Services
 
             var menu = new ContextMenu();
 
-            var testItem = new MenuItem { Header = "Open (test)" };
-            testItem.Click += (_, _) => MessageBox.Show("SmartSave läuft ✅", "SmartSave");
-            menu.Items.Add(testItem);
-
-            menu.Items.Add(new Separator());
+            var pendingItem = new MenuItem { Header = "Pending..." };
+            pendingItem.Click += (_, _) => PendingRequested?.Invoke(this, EventArgs.Empty);
+            menu.Items.Add(pendingItem);
 
             var exitItem = new MenuItem { Header = "Exit" };
             exitItem.Click += (_, _) => Application.Current.Shutdown();
             menu.Items.Add(exitItem);
 
             _trayIcon.ContextMenu = menu;
-
-            // Optional: Klick auf Tray-Icon macht auch "Open (test)"
-            _trayIcon.TrayLeftMouseUp += (_, _) => MessageBox.Show("SmartSave läuft ✅", "SmartSave");
+            _trayIcon.TrayLeftMouseUp += (_, _) => PendingRequested?.Invoke(this, EventArgs.Empty);
         }
 
         public void Dispose()

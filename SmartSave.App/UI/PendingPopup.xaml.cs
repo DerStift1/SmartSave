@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,29 +9,28 @@ using SmartSave.App.Models;
 
 namespace SmartSave.App.UI;
 
-public partial class DestinationPopup : Window
+public partial class PendingPopup : Window
 {
-    private readonly TaskCompletionSource<DestinationOption?> _selectionTcs = new();
+    private readonly TaskCompletionSource<string?> _selectionTcs = new();
 
-    public DestinationPopup(string fileName, IReadOnlyList<DestinationOption> options)
+    public PendingPopup(IReadOnlyList<string> pendingPaths)
     {
         InitializeComponent();
-        FileNameText.Text = fileName;
-        OptionsList.ItemsSource = options;
+        PendingList.ItemsSource = pendingPaths.Select(path => new PendingItem(path)).ToList();
     }
 
-    public Task<DestinationOption?> WaitForSelectionAsync() => _selectionTcs.Task;
+    public Task<string?> WaitForSelectionAsync() => _selectionTcs.Task;
 
-    private void OptionClick(object sender, RoutedEventArgs e)
+    private void PendingClick(object sender, RoutedEventArgs e)
     {
-        if (sender is Button button && button.Tag is DestinationOption option)
+        if (sender is Button button && button.Tag is PendingItem item)
         {
-            _selectionTcs.TrySetResult(option);
+            _selectionTcs.TrySetResult(item.FullPath);
             Close();
         }
     }
 
-    private void LaterClick(object sender, RoutedEventArgs e)
+    private void CloseClick(object sender, RoutedEventArgs e)
     {
         _selectionTcs.TrySetResult(null);
         Close();

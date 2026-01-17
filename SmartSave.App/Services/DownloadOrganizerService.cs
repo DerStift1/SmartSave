@@ -14,6 +14,7 @@ public sealed class DownloadOrganizerService : IDisposable
     private readonly DownloadsWatcherService _watcher;
     private readonly DestinationSuggestionService _suggestions = new();
     private readonly MoveService _moveService = new();
+    private readonly PendingFileStore _pendingStore = new();
     private readonly SemaphoreSlim _promptGate = new(1, 1);
 
     public DownloadOrganizerService()
@@ -23,6 +24,8 @@ public sealed class DownloadOrganizerService : IDisposable
     }
 
     public void Start() => _watcher.Start();
+
+    public void ShowPending() => _ = HandlePendingAsync();
 
     public void Dispose()
     {
@@ -41,6 +44,11 @@ public sealed class DownloadOrganizerService : IDisposable
         await _promptGate.WaitAsync();
         try
         {
+            if (_pendingStore.Contains(fullPath))
+            {
+                return;
+            }
+
             if (!File.Exists(fullPath))
             {
                 return;
@@ -50,17 +58,12 @@ public sealed class DownloadOrganizerService : IDisposable
             var selection = await ShowPopupAsync(fullPath, options);
             if (selection is null)
             {
+                _pendingStore.Add(fullPath);
                 return;
             }
 
-            if (selection.Kind == DestinationKind.ExistingFolder)
-            {
-                _moveService.MoveToFolder(fullPath, selection.TargetPath);
-            }
-            else
-            {
-                _moveService.MoveToNewFolder(fullPath, selection.TargetPath);
-            }
+            MoveFile(fullPath, selection);
+            _pendingStore.Remove(fullPath);
         }
         catch (Exception ex)
         {
@@ -69,6 +72,64 @@ public sealed class DownloadOrganizerService : IDisposable
         finally
         {
             _promptGate.Release();
+        }
+    }
+
+    private async Task HandlePendingAsync()
+    {
+        await _promptGate.WaitAsync();
+        try
+        {
+            var pending = _pendingStore.GetExisting();
+            if (pending.Count == 0)
+            {
+                await ShowInfoAsync("No pending downloads.");
+                return;
+            }
+
+            var selected = await ShowPendingPopupAsync(pending);
+            if (string.IsNullOrWhiteSpace(selected))
+            {
+                return;
+            }
+
+            if (!File.Exists(selected))
+            {
+                _pendingStore.Remove(selected);
+                await ShowInfoAsync("That file is no longer available.");
+                return;
+            }
+
+            var options = BuildOptions(_watcher.DownloadsPath);
+            var selection = await ShowPopupAsync(selected, options);
+            if (selection is null)
+            {
+                _pendingStore.Add(selected);
+                return;
+            }
+
+            MoveFile(selected, selection);
+            _pendingStore.Remove(selected);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync(ex);
+        }
+        finally
+        {
+            _promptGate.Release();
+        }
+    }
+
+    private void MoveFile(string fullPath, DestinationOption selection)
+    {
+        if (selection.Kind == DestinationKind.ExistingFolder)
+        {
+            _moveService.MoveToFolder(fullPath, selection.TargetPath);
+        }
+        else
+        {
+            _moveService.MoveToNewFolder(fullPath, selection.TargetPath);
         }
     }
 
@@ -102,15 +163,43 @@ public sealed class DownloadOrganizerService : IDisposable
         return popup.WaitForSelectionAsync();
     }
 
-    private static Task ShowErrorAsync(Exception ex)
+    private Task<string?> ShowPendingPopupAsync(IReadOnlyList<string> pending)
     {
         var dispatcher = Application.Current.Dispatcher;
         if (dispatcher.CheckAccess())
         {
-            MessageBox.Show(ex.Message, "SmartSave");
+            return ShowPendingPopupInternal(pending);
+        }
+
+        return dispatcher.InvokeAsync(() => ShowPendingPopupInternal(pending)).Task.Unwrap();
+    }
+
+    private static Task<string?> ShowPendingPopupInternal(IReadOnlyList<string> pending)
+    {
+        var popup = new PendingPopup(pending);
+        popup.Show();
+        return popup.WaitForSelectionAsync();
+    }
+
+    private static Task ShowErrorAsync(Exception ex)
+    {
+        return ShowMessageAsync(ex.Message, "SmartSave");
+    }
+
+    private static Task ShowInfoAsync(string message)
+    {
+        return ShowMessageAsync(message, "SmartSave");
+    }
+
+    private static Task ShowMessageAsync(string message, string caption)
+    {
+        var dispatcher = Application.Current.Dispatcher;
+        if (dispatcher.CheckAccess())
+        {
+            MessageBox.Show(message, caption);
             return Task.CompletedTask;
         }
 
-        return dispatcher.InvokeAsync(() => MessageBox.Show(ex.Message, "SmartSave")).Task;
+        return dispatcher.InvokeAsync(() => MessageBox.Show(message, caption)).Task;
     }
 }
